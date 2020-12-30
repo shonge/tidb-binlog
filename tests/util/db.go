@@ -18,7 +18,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/url"
 	"strings"
 	"time"
@@ -61,13 +60,19 @@ func CreateDB(cfg DBConfig) (db *sql.DB, err error) {
 		return nil, errors.Annotate(err, "You must provide at least one mysql address")
 	}
 
-	random := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	index := random.Intn(len(hosts))
-	h := hosts[index]
-
-	dbDSN := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8&interpolateParams=true&multiStatements=true&time_zone=%s", cfg.User, cfg.Password, h, cfg.Port, cfg.Name, url.QueryEscape(zone))
-	db, err = sql.Open("mysql", dbDSN)
+	for _, h := range hosts {
+		dbDSN := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8&interpolateParams=true&multiStatements=true&time_zone=%s&timeout=15s", cfg.User, cfg.Password, h, cfg.Port, cfg.Name, url.QueryEscape(zone))
+		db, _ = sql.Open("mysql", dbDSN)
+		log.Printf("Ping database host: %s port: %v timeout: 15s", h, cfg.Port)
+		err = db.Ping()
+		if err != nil {
+			log.Print(errors.Trace(err))
+			continue
+		} else {
+			err = nil
+			break
+		}
+	}
 	if err != nil {
 		return nil, errors.Trace(err)
 	}

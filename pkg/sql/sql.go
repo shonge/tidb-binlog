@@ -16,7 +16,6 @@ package sql
 import (
 	"database/sql"
 	"fmt"
-	"math/rand"
 	"net"
 	"net/url"
 	"strconv"
@@ -131,21 +130,26 @@ func OpenDBWithSQLMode(proto string, host string, port int, username string, pas
 		return nil, errors.Annotate(err, "You must provide at least one mysql address")
 	}
 
-	random := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	index := random.Intn(len(hosts))
-	h := hosts[index]
-
-	dbDSN := fmt.Sprintf("%s:%s@tcp(%s:%d)/?charset=utf8mb4,utf8&multiStatements=true", username, password, h, port)
-	if sqlMode != nil {
-		// same as "set sql_mode = '<sqlMode>'"
-		dbDSN += "&sql_mode='" + url.QueryEscape(*sqlMode) + "'"
+	for _, h := range hosts {
+		dbDSN := fmt.Sprintf("%s:%s@tcp(%s:%d)/?charset=utf8mb4,utf8&multiStatements=true&timeout=15s", username, password, h, port)
+		if sqlMode != nil {
+			// same as "set sql_mode = '<sqlMode>'"
+			dbDSN += "&sql_mode='" + url.QueryEscape(*sqlMode) + "'"
+		}
+		db, _ = sql.Open(proto, dbDSN)
+		log.Info("Ping database", zap.String("host:", h), zap.Int("port:", port), zap.String("timeout:", "15s"))
+		err = db.Ping()
+		if err != nil {
+			log.Error("Fail to connect DB", zap.Error(err))
+			continue
+		} else {
+			err = nil
+			break
+		}
 	}
-	db, err = sql.Open(proto, dbDSN)
 	if err != nil {
-		return nil, errors.Annotatef(err, "dsn: %s", dbDSN)
+		return nil, errors.Trace(err)
 	}
-
 	return db, nil
 }
 

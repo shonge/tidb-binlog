@@ -17,12 +17,12 @@ import (
 	gosql "database/sql"
 	"fmt"
 	"hash/crc32"
-	"math/rand"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/pingcap/errors"
+	"github.com/pingcap/log"
+	"go.uber.org/zap"
 )
 
 var (
@@ -87,18 +87,23 @@ func CreateDBWithSQLMode(user string, password string, host string, port int, sq
 		return nil, errors.Annotate(err, "You must provide at least one mysql address")
 	}
 
-	random := rand.New(rand.NewSource(time.Now().UnixNano()))
-
-	index := random.Intn(len(hosts))
-	h := hosts[index]
-
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/?charset=utf8mb4,utf8&interpolateParams=true&readTimeout=1m&multiStatements=true", user, password, h, port)
-	if sqlMode != nil {
-		// same as "set sql_mode = '<sqlMode>'"
-		dsn += "&sql_mode='" + url.QueryEscape(*sqlMode) + "'"
+	for _, h := range hosts {
+		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/?charset=utf8mb4,utf8&interpolateParams=true&readTimeout=1m&multiStatements=true&timeout=15s", user, password, h, port)
+		if sqlMode != nil {
+			// same as "set sql_mode = '<sqlMode>'"
+			dsn += "&sql_mode='" + url.QueryEscape(*sqlMode) + "'"
+		}
+		db, _ = gosql.Open("mysql", dsn)
+		log.Info("Ping database", zap.String("host:", h), zap.Int("port:", port), zap.String("timeout:", "15s"))
+		err = db.Ping()
+		if err != nil {
+			log.Error("Fail to connect mysql", zap.Error(err))
+			continue
+		} else {
+			err = nil
+			break
+		}
 	}
-
-	db, err = gosql.Open("mysql", dsn)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
