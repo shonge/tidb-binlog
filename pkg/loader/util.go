@@ -17,8 +17,10 @@ import (
 	gosql "database/sql"
 	"fmt"
 	"hash/crc32"
+	"math/rand"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/pingcap/errors"
 )
@@ -79,7 +81,18 @@ func getTableInfo(db *gosql.DB, schema string, table string) (info *tableInfo, e
 
 // CreateDBWithSQLMode return sql.DB
 func CreateDBWithSQLMode(user string, password string, host string, port int, sqlMode *string) (db *gosql.DB, err error) {
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/?charset=utf8mb4,utf8&interpolateParams=true&readTimeout=1m&multiStatements=true", user, password, host, port)
+	hosts := strings.Split(host, ",")
+
+	if len(hosts) < 1 {
+		return nil, errors.Annotate(err, "You must provide at least one mysql address")
+	}
+
+	random := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	index := random.Intn(len(hosts))
+	h := hosts[index]
+
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/?charset=utf8mb4,utf8&interpolateParams=true&readTimeout=1m&multiStatements=true", user, password, h, port)
 	if sqlMode != nil {
 		// same as "set sql_mode = '<sqlMode>'"
 		dsn += "&sql_mode='" + url.QueryEscape(*sqlMode) + "'"
